@@ -1,3 +1,21 @@
 .env
 photos-local-dev/
 debug/
+
+# IDEs
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.iml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverrideIcon
+._*
+.Spotlight-V100
+.Trashes
