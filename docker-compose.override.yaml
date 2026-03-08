@@ -1,0 +1,15 @@
+# Dev overrides — applied automatically when running `docker compose up`.
+# Exposes internal service ports for local debugging tools.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"   # connect with DBeaver, psql, etc.
+
+  redis:
+    ports:
+      - "6379:6379"   # connect with redis-cli, Redis Insight, etc.
+
+  photos_to_frame_daemon:
+    ports:
+      - "3000:3000"   # send test webhooks with curl

@@ -1,0 +1,117 @@
+name: grandmas-frame
+
+services:
+
+  # ── Shared infrastructure ──────────────────────────────────────────────────
+
+  postgres:
+    image: docker.io/tensorchord/pgvecto-rs:pg16-v0.3.0
+    container_name: grandmas_postgres
+    environment:
+      # Superuser — internal only, never used by apps
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD}
+      # Passed through to init-db.sh to create per-app users
+      IMMICH_DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      EVOLUTION_DB_PASSWORD: ${EVOLUTION_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: docker.io/redis:7-alpine
+    container_name: grandmas_redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Immich ─────────────────────────────────────────────────────────────────
+
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    container_name: immich_server
+    environment:
+      DB_HOSTNAME: postgres
+      DB_USERNAME: immich
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: redis
+    volumes:
+      - ${UPLOAD_LOCATION:-./photos-local-dev}:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "2283:2283"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    container_name: immich_ml
+    volumes:
+      - ml_cache:/cache
+    restart: unless-stopped
+
+  # ── Evolution API (WhatsApp gateway) ───────────────────────────────────────
+
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution_api
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD}@postgres:5432/evolution
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: evolution
+      WEBHOOK_GLOBAL_ENABLED: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── photos_to_frame_daemon (webhook → Immich bridge) ──────────────────────
+
+  photos_to_frame_daemon:
+    build: ./photos_to_frame_daemon
+    container_name: grandmas_photos_to_frame_daemon
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      IMMICH_URL: http://immich-server:2283
+      IMMICH_API_KEY: ${IMMICH_API_KEY}
+      IMMICH_ALBUM_NAME: ${IMMICH_ALBUM_NAME:-Grandma's Frame}
+      # Restrict to a specific WhatsApp group JID, e.g. 1234567890-1234@g.us
+      # Leave empty to accept photos from all chats.
+      WHATSAPP_GROUP_ID: ${WHATSAPP_GROUP_ID:-}
+    depends_on:
+      - evolution-api
+      - immich-server
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ml_cache:
+  evolution_instances:
