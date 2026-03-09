@@ -91,6 +91,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── ImmichFrame (slideshow display server) ─────────────────────────────────
+
+  immichframe:
+    image: ghcr.io/immichframe/immichframe:latest
+    container_name: immichframe
+    environment:
+      ImmichServerUrl: http://immich-server:2283
+      ApiKey: ${IMMICH_FRAME_API_KEY}
+      Albums: ${IMMICH_ALBUM_ID}
+    depends_on:
+      - immich-server
+    restart: unless-stopped
+
   # ── photos_to_frame_daemon (webhook → Immich bridge) ──────────────────────
 
   photos_to_frame_daemon:
@@ -102,7 +115,7 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       IMMICH_URL: http://immich-server:2283
       IMMICH_API_KEY: ${IMMICH_API_KEY}
-      IMMICH_ALBUM_NAME: ${IMMICH_ALBUM_NAME:-Grandma's Frame}
+      IMMICH_ALBUM_ID: ${IMMICH_ALBUM_ID}
       # Restrict to a specific WhatsApp group JID, e.g. 1234567890-1234@g.us
       # Leave empty to accept photos from all chats.
       WHATSAPP_GROUP_ID: ${WHATSAPP_GROUP_ID:-}

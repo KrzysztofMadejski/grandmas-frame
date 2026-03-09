@@ -68,7 +68,7 @@ The daemon uploads photos as this service account. Immich does not allow admins 
 The daemon will not create the album — it expects to find one shared with it. You create and own it:
 
 1. Log in as your **personal admin account**
-2. Go to **Albums → Create Album** and name it exactly `Grandma's Frame` (or whatever `IMMICH_ALBUM_NAME` is set to in `.env`)
+2. Go to **Albums → Create Album** and name it anything you like (e.g. `Grandma's Frame`)
 3. Open the album → **Share** → invite `frame-bot@local` with **Editor** role
 
 The daemon checks both albums owned by the service account and albums shared with it, so it will find it automatically.
@@ -200,12 +200,245 @@ docker run --rm -v grandmas-frame_postgres_data:/data -v /backup:/backup \
 
 ### 7. Set up ImmichFrame (the display)
 
-On your Raspberry Pi, Android tablet, or Apple TV, install [ImmichFrame](https://github.com/immichFrame/ImmichFrame) and point it at:
-- Immich URL: `http://<server>:2283` (or your HTTPS domain)
-- Immich API key: create a **separate** key on your **personal admin account** (not frame-bot) with read-only permissions:
-  - `asset.read`, `asset.view`, `asset.download`
-  - `album.read`
-- Album: the name you set in `IMMICH_ALBUM_NAME`
+ImmichFrame runs as a web container (already in `docker-compose.yaml`) that connects to Immich and serves the slideshow. On a tablet, a thin Android app just wraps this web UI.
+
+#### 7a. Create an API key for the frame
+
+Create the key on the **frame-bot service account** (not your personal admin account). This means ImmichFrame can only see albums shared with the bot — natural scoping, no access to your personal library.
+
+1. Log in as `frame-bot@local` (incognito window)
+2. Account Settings → API Keys → New API Key
+3. Enable: `asset.read`, `asset.view`, `asset.download`, `album.read`
+4. Copy the key and add to `.env`:
+   ```
+   IMMICH_FRAME_API_KEY=<key>
+   ```
+
+#### 7b. Get the album UUID
+
+ImmichFrame requires a UUID, not the album name. Find it in the Immich album URL:
+```
+http://localhost:2283/albums/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this part
+```
+
+Or via the API (as the frame-bot account):
+```bash
+docker exec immich_server node -e "
+fetch('http://localhost:2283/api/albums?shared=true',
+  {headers:{'x-api-key':'<IMMICH_FRAME_API_KEY>'}})
+  .then(r=>r.json()).then(d=>d.forEach(a=>console.log(a.id, a.albumName)))"
+```
+
+Add it to `.env`:
+```
+IMMICH_ALBUM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+#### 7c. Restart and verify
+
+```bash
+docker compose restart immichframe
+```
+
+In local dev, open `http://localhost:8080` to verify the slideshow works.
+
+#### 7c. Install the Android app on the tablet
+
+Install [ImmichFrame](https://play.google.com/store/apps/details?id=com.immichframe.immichframe) from the Play Store (or sideload from [GitHub releases](https://github.com/immichFrame/ImmichFrame_Android/releases)).
+
+On first launch, enter the ImmichFrame server URL:
+- Local network: `http://<server-ip>:8080`
+- Or via Tailscale: `http://<tailscale-ip>:8080` (see security section)
+
+---
+
+## Setting up ImmichFrame on Samsung Galaxy Tab (Kiosk Mode)
+
+### 1. Kiosk mode — set ImmichFrame as the default Home launcher (recommended)
+
+ImmichFrame declares itself a valid Home app, so:
+- It starts automatically on every reboot — Android always launches the default Home app on startup
+- The Home button returns to ImmichFrame instead of leaving it
+
+```
+Settings > Apps > Default apps > Home app > ImmichFrame
+```
+
+To undo: Settings > Apps > Default apps > Home app > One UI Home
+
+**Optional — Screen Pinning** for extra lock-down (requires a PIN to exit):
+
+1. Settings > Security and privacy > More security settings > App pinning > On
+2. Open ImmichFrame, swipe up to Recents, tap the ImmichFrame app icon > Pin
+
+### 2. Keep screen always on
+
+```
+Settings > About tablet > Software information > tap "Build number" 7 times  ← enables Developer Options
+Settings > Developer options > Stay awake > On
+```
+
+This keeps the screen on while charging — exactly right for a plugged-in frame.
+
+Also disable Samsung's built-in screensaver (it will interrupt the photo frame):
+```
+Settings > Display > Screen saver > Off
+```
+
+### 3. Display tweaks
+
+| Setting | Path | Recommended value |
+|---|---|---|
+| Screen timeout | Settings > Display > Screen timeout | Maximum (10–30 min; "Stay awake" above overrides it anyway) |
+| Adaptive brightness | Settings > Display > Brightness | Off — set a fixed level |
+| Edge panels | Settings > Display > Edge panels | Off |
+| Navigation bar | Settings > Display > Navigation bar | Swipe gestures (thinner bar) |
+| Orientation | Pull down shade, tap rotation lock | Locked |
+
+### 4. Power — safe long-term charging
+
+Keeping a tablet plugged in 24/7 can swell the battery within 12–18 months. Samsung provides a built-in fix:
+
+```
+Settings > Battery > Battery protection > Basic   ← caps charging at 85%
+```
+
+Use a modest 5–10 W charger (not a fast charger) — lower heat = slower degradation.
+
+### 5. Night schedule
+
+ImmichFrame has no built-in sleep scheduler. Use one of:
+
+- **Samsung Routines** (built-in): Settings > Modes and Routines > Routines — dim at 23:00, launch ImmichFrame at 08:00
+- **ImmichFrame Remote Control API + server cron** — the Android app exposes a small HTTP server on port 53287:
+  ```bash
+  # Add to crontab on your server
+  0 23 * * *  curl -s http://<tablet-ip>:53287/dim
+  0 8  * * *  curl -s http://<tablet-ip>:53287/undim
+  ```
+
+### 6. Wi-Fi reliability
+
+```
+Settings > Apps > ImmichFrame > Battery > Battery optimization > Don't optimize
+Settings > Connections > Wi-Fi > ⋮ > Advanced > Keep Wi-Fi on during sleep > Always
+Settings > Connections > Wi-Fi > ⋮ > Advanced > Wi-Fi power saving mode > Off
+```
+
+### 7. Samsung One UI tips
+
+```
+Settings > Lock screen > Screen lock type > None          ← no lock screen on wake
+Settings > Notifications > Do not disturb > On (24/7)
+Settings > Advanced features > Motions and gestures > Double tap to turn on screen > Off
+Settings > Advanced features > Motions and gestures > Lift to wake > Off
+```
+
+### 8. Quick checklist
+
+- [ ] ImmichFrame set as default Home app
+- [ ] Developer options: Stay awake — On
+- [ ] Screen saver — Off
+- [ ] Adaptive brightness — Off, fixed level set
+- [ ] Edge panels — Off
+- [ ] Battery Protection — Basic (85% cap)
+- [ ] Battery optimisation for ImmichFrame — Off (Don't optimize)
+- [ ] Wi-Fi: Keep on during sleep — Always
+- [ ] Wi-Fi power saving mode — Off
+- [ ] Lock screen — None
+- [ ] Do Not Disturb — On
+- [ ] Double-tap to wake / Lift to wake — Off
+- [ ] Orientation locked
+- [ ] Night schedule configured
+
+---
+
+## Securing the ImmichFrame display
+
+ImmichFrame has no authentication by default. Since the server will be publicly accessible (or eventually will be), you need to restrict who can reach the slideshow.
+
+### Option 1: Tailscale (recommended)
+
+Tailscale creates an encrypted WireGuard overlay between your devices. ImmichFrame is never exposed publicly — the tablet connects through a private tunnel, and nothing is reachable from the internet or even the local network.
+
+**Server:**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+# Note the server's Tailscale IP (100.x.y.z) at https://login.tailscale.com/admin/machines
+```
+
+Bind ImmichFrame to localhost only so it is not reachable on the LAN. In `docker-compose.prod.yaml` add:
+```yaml
+services:
+  immichframe:
+    ports:
+      - "127.0.0.1:8080:8080"
+```
+
+**Tablet:** Install the [Tailscale app](https://play.google.com/store/apps/details?id=com.tailscale.ipn), sign in with the same Tailscale account.
+
+In the ImmichFrame app, set the server URL to the Tailscale IP: `http://100.x.y.z:8080`
+
+No open ports on the router, no LAN exposure, encrypted in transit.
+
+### Option 2: Reverse proxy with HTTP Basic Auth (Caddy)
+
+Suitable if you already run a reverse proxy with a domain and TLS certificate.
+
+```bash
+caddy hash-password   # generates the hashed password
+```
+
+`/etc/caddy/Caddyfile`:
+```
+frame.yourdomain.com {
+    basicauth {
+        grandma $2a$14$<hash-from-above>
+    }
+    reverse_proxy localhost:8080
+}
+```
+
+Bind ImmichFrame to localhost only (same `127.0.0.1:8080:8080` binding as above), then:
+```bash
+sudo systemctl reload caddy
+```
+
+The tablet browser will prompt for username/password once and remember it.
+
+### Option 3: Host firewall — allow only the tablet's IP
+
+```bash
+# Set a DHCP reservation for the tablet's MAC in your router first
+sudo ufw allow from 192.168.1.50 to any port 8080
+sudo ufw deny 8080
+sudo ufw reload
+```
+
+Breaks if the tablet gets a new IP — a DHCP reservation is essential.
+
+---
+
+## Bulk-uploading existing WhatsApp group media to Immich
+
+Use this to backfill all historical photos from the group before the daemon was running.
+
+### Recommended: Immich mobile app backup
+
+On Android, the Immich mobile app can back up the WhatsApp Images and WhatsApp Video device albums to Immich:
+
+1. Install the Immich mobile app on a group member's phone
+2. Go to the backup screen → Select albums to back up
+3. Enable "WhatsApp Images" and "WhatsApp Video"
+4. Tap Start Backup (must be on the same network as the Immich server, or connected via Tailscale)
+
+**Caveat:** This uploads all WhatsApp media saved on that device, from all chats — not just the family group. After the backup completes, go to Immich and move only the photos you want into the *Grandma's Frame* album. The rest can stay in the user's personal library or be deleted.
+
+The Immich CLI deduplicates by content hash, so any photos later re-sent through the group and picked up by the daemon will not be duplicated.
+
+> **Note:** A smarter approach — a script that connects as an existing group member account via Evolution API and downloads only group photos — is tracked in `improvements.md`.
 
 ---
 
@@ -218,7 +451,8 @@ On your Raspberry Pi, Android tablet, or Apple TV, install [ImmichFrame](https:/
 | `EVOLUTION_DB_PASSWORD` | Evolution API's postgres user password |
 | `IMMICH_VERSION` | Immich image tag (`release` = latest stable) |
 | `UPLOAD_LOCATION` | Host path where Immich stores photos |
-| `IMMICH_API_KEY` | Set after first Immich login |
+| `IMMICH_API_KEY` | API key for the frame-bot service account (upload) |
 | `EVOLUTION_API_KEY` | Evolution API authentication key |
-| `IMMICH_ALBUM_NAME` | Album name to add photos to (default: *Grandma's Frame*) |
+| `IMMICH_ALBUM_ID` | UUID of the album — used by both the daemon (to add photos) and ImmichFrame (to display). Copy from the Immich album URL. |
 | `WHATSAPP_GROUP_ID` | Group JID to filter — empty means accept from all chats |
+| `IMMICH_FRAME_API_KEY` | API key for ImmichFrame display — created on the frame-bot account for natural album scoping |

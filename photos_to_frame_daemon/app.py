@@ -20,30 +20,24 @@ EVOLUTION_API_URL = os.environ["EVOLUTION_API_URL"]
 EVOLUTION_API_KEY = os.environ["EVOLUTION_API_KEY"]
 IMMICH_URL = os.environ["IMMICH_URL"]
 IMMICH_API_KEY = os.environ["IMMICH_API_KEY"]
-IMMICH_ALBUM_NAME = os.environ.get("IMMICH_ALBUM_NAME", "Grandma's Frame")
+IMMICH_ALBUM_ID = os.environ["IMMICH_ALBUM_ID"]
 WHATSAPP_GROUP_ID = os.environ.get("WHATSAPP_GROUP_ID", "")
 
-log.info("Daemon starting — IMMICH_URL=%s ALBUM=%r GROUP_FILTER=%r", IMMICH_URL, IMMICH_ALBUM_NAME, WHATSAPP_GROUP_ID or "(any)")
+log.info("Daemon starting — IMMICH_URL=%s ALBUM_ID=%r GROUP_FILTER=%r", IMMICH_URL, IMMICH_ALBUM_ID, WHATSAPP_GROUP_ID or "(any)")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with httpx.AsyncClient() as client:
-        headers = {"x-api-key": IMMICH_API_KEY}
-        owned_resp = await client.get(f"{IMMICH_URL}/api/albums", headers=headers)
-        owned_resp.raise_for_status()
-        shared_resp = await client.get(f"{IMMICH_URL}/api/albums", headers=headers, params={"shared": "true"})
-        shared_resp.raise_for_status()
-        all_albums = owned_resp.json() + shared_resp.json()
-        names = [a["albumName"] for a in all_albums]
-        if IMMICH_ALBUM_NAME not in names:
-            log.error(
-                "Album %r not found. Available albums visible to this API key: %s",
-                IMMICH_ALBUM_NAME,
-                names or "(none)",
-            )
+        resp = await client.get(
+            f"{IMMICH_URL}/api/albums/{IMMICH_ALBUM_ID}",
+            headers={"x-api-key": IMMICH_API_KEY},
+        )
+        if resp.status_code == 404:
+            log.error("Album ID %r not found. Check IMMICH_ALBUM_ID in .env.", IMMICH_ALBUM_ID)
             sys.exit(1)
-        log.info("Album %r found — ready.", IMMICH_ALBUM_NAME)
+        resp.raise_for_status()
+        log.info("Album %r found — ready.", resp.json().get("albumName"))
     yield
 
 
@@ -67,34 +61,6 @@ async def download_media(client: httpx.AsyncClient, instance: str, key: dict, me
     log.info("Media downloaded — base64 length=%d chars", len(media_b64))
     return media_b64
 
-
-async def find_album(client: httpx.AsyncClient) -> str:
-    headers = {"x-api-key": IMMICH_API_KEY}
-
-    log.debug("Searching owned albums for %r", IMMICH_ALBUM_NAME)
-    resp = await client.get(f"{IMMICH_URL}/api/albums", headers=headers)
-    resp.raise_for_status()
-    owned = resp.json()
-    log.debug("Owned albums: %s", [a["albumName"] for a in owned])
-    for album in owned:
-        if album["albumName"] == IMMICH_ALBUM_NAME:
-            log.debug("Found album in owned: %s", album["id"])
-            return album["id"]
-
-    log.debug("Not in owned albums — searching shared albums")
-    resp = await client.get(f"{IMMICH_URL}/api/albums", headers=headers, params={"shared": "true"})
-    resp.raise_for_status()
-    shared = resp.json()
-    log.debug("Shared albums: %s", [a["albumName"] for a in shared])
-    for album in shared:
-        if album["albumName"] == IMMICH_ALBUM_NAME:
-            log.debug("Found album in shared: %s", album["id"])
-            return album["id"]
-
-    raise RuntimeError(
-        f"Album '{IMMICH_ALBUM_NAME}' not found in owned or shared albums. "
-        "Create it in Immich and share it with the service account as Editor."
-    )
 
 
 async def upload_to_immich(
@@ -165,18 +131,16 @@ async def webhook(request: Request):
 
         asset_id = await upload_to_immich(client, photo_data, filename, mimetype)
 
-        log.info("Finding album %r", IMMICH_ALBUM_NAME)
-        album_id = await find_album(client)
-        log.info("Adding asset %s to album %s", asset_id, album_id)
+        log.info("Adding asset %s to album %s", asset_id, IMMICH_ALBUM_ID)
 
         resp = await client.put(
-            f"{IMMICH_URL}/api/albums/{album_id}/assets",
+            f"{IMMICH_URL}/api/albums/{IMMICH_ALBUM_ID}/assets",
             headers={"x-api-key": IMMICH_API_KEY},
             json={"ids": [asset_id]},
         )
         log.debug("Album add response %d: %s", resp.status_code, resp.text[:500])
         resp.raise_for_status()
-        log.info("Done — asset %s added to album %s", asset_id, album_id)
+        log.info("Done — asset %s added to album %s", asset_id, IMMICH_ALBUM_ID)
 
     return {"status": "ok", "asset_id": asset_id}
 

@@ -13,3 +13,7 @@ services:
   photos_to_frame_daemon:
     ports:
       - "3000:3000"   # send test webhooks with curl
+
+  immichframe:
+    ports:
+      - "8088:8080"   # view the slideshow in a browser at localhost:8088
