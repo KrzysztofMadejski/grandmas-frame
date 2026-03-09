@@ -2,15 +2,18 @@
 
 ## WhatsApp history backfill
 
-- **Script to backfill media from an existing user account via Evolution API**
-  Rather than connecting as the bot account (which has no message history), build a
-  backfill script that authenticates as an existing group member's account, iterates
-  through all messages in the group via `findMessages` + pagination, downloads each
-  media item using `getBase64FromMediaMessage`, and uploads directly to Immich via
-  the API or CLI. This is preferable to the mobile app backup approach because it
-  only picks up group photos (not all WhatsApp media from all chats) and is
-  fully automated. The instance would be a temporary one connected on a member's
-  number just for the backfill, then disconnected.
+- ✅ **Script to backfill media from an existing user account via Evolution API** — done (`backfill.py`)
+
+## Chrome extension backfill
+
+- **Chrome extension that downloads media from web.whatsapp.com directly to Immich**
+  WhatsApp Web already decrypts and renders full-resolution media in the browser, so a
+  Chrome extension can grab blob URLs as WhatsApp renders them (via `MutationObserver`
+  on the media panel or by intercepting fetch/XHR) — no auth, no QR, no expiry issues.
+  It would upload each blob to Immich (`POST /api/assets`) and add to the album
+  (`PUT /api/albums/{id}/assets`), with Immich URL and API key configurable in the
+  extension's options page. Would recover media that the Evolution API backfill misses
+  due to expired CDN links.
 
 ## Setup UX
 
