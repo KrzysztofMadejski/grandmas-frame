@@ -119,6 +119,8 @@ services:
       # Restrict to a specific WhatsApp group JID, e.g. 1234567890-1234@g.us
       # Leave empty to accept photos from all chats.
       WHATSAPP_GROUP_ID: ${WHATSAPP_GROUP_ID:-}
+      # Used by backfill.py — instance name/ID of the account to fetch history from
+      USER_BACKFILL_EVOLUTION_INSTANCE_NAME: ${USER_BACKFILL_EVOLUTION_INSTANCE_NAME:-}
     depends_on:
       - evolution-api
       - immich-server
