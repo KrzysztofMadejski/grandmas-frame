@@ -2,6 +2,45 @@
 #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 
 services:
+
+  # ── Tailscale sidecar ───────────────────────────────────────────────────────
+  # ImmichFrame runs in Tailscale's network namespace (network_mode below),
+  # so its port 8080 is reachable at http://grandmas-frame:8080 on the tailnet.
+  # No ports are exposed to the public internet.
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: grandmas_tailscale
+    hostname: grandmas-frame
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"      # kernel-mode WireGuard (requires /dev/net/tun)
+      TS_ACCEPT_DNS: "false"     # keep Docker's internal DNS; don't let Tailscale override it
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN   # required for TUN/WireGuard
+      - SYS_MODULE  # load WireGuard kernel module; safe to drop on kernels ≥ 5.6 with WG built in
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Route ImmichFrame through the Tailscale network namespace.
+  # It still resolves immich-server via Docker DNS (Tailscale's namespace is on the project network).
+  immichframe:
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+
   immich-machine-learning:
     deploy:
       resources:
@@ -42,3 +81,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  tailscale_state:
