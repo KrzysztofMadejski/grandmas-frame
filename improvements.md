@@ -6,14 +6,16 @@
 
 ## Chrome extension backfill
 
-- **Chrome extension that downloads media from web.whatsapp.com directly to Immich**
-  WhatsApp Web already decrypts and renders full-resolution media in the browser, so a
-  Chrome extension can grab blob URLs as WhatsApp renders them (via `MutationObserver`
-  on the media panel or by intercepting fetch/XHR) — no auth, no QR, no expiry issues.
-  It would upload each blob to Immich (`POST /api/assets`) and add to the album
-  (`PUT /api/albums/{id}/assets`), with Immich URL and API key configurable in the
-  extension's options page. Would recover media that the Evolution API backfill misses
-  due to expired CDN links.
+- ✅ **Chrome extension that downloads media from web.whatsapp.com** — done (`chrom_extension/`)
+  Scans blob URLs from the Media tab (rendered images + background-image elements),
+  packs them into ZIP files in-memory (batches of 100), and triggers a single download
+  per batch. Recovers more images than `backfill.py` because it bypasses CDN link expiry —
+  WhatsApp Web has already decrypted and rendered the images, so expiry is irrelevant.
+
+- **Upload directly to Immich from the extension** (next step)
+  Instead of downloading a ZIP and manually importing, the extension could POST each blob
+  directly to Immich (`POST /api/assets`) and add to the album (`PUT /api/albums/{id}/assets`),
+  with Immich URL and API key configurable in the extension's options page.
 
 ## Setup UX
 
