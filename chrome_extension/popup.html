@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      width: 280px;
+      padding: 12px 16px;
+      margin: 0;
+      font-size: 13px;
+    }
+    h3 { margin: 0 0 8px; font-size: 14px; }
+    p.hint {
+      margin: 0 0 12px;
+      color: #555;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .btn {
+      width: 100%;
+      padding: 8px;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      display: block;
+    }
+    .btn:disabled { background: #aaa; cursor: not-allowed; }
+    .btn-scan     { background: #25d366; }
+    .btn-download { background: #128c7e; margin-top: 8px; }
+    #status {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 4px;
+      display: none;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    #status.info  { background: #e8f5e9; color: #1b5e20; display: block; }
+    #status.error { background: #ffebee; color: #b71c1c; display: block; }
+    #status.warn  { background: #fff8e1; color: #e65100; display: block; }
+  </style>
+</head>
+<body>
+  <h3>WhatsApp Media Downloader</h3>
+  <p class="hint">
+    Open a group's <strong>Media</strong> tab, scroll so images are visible,
+    then scan first.
+  </p>
+  <button id="scanBtn" class="btn btn-scan">Scan for Images</button>
+  <button id="downloadBtn" class="btn btn-download" style="display:none">Download</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
