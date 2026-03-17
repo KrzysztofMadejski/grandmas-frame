@@ -25,6 +25,8 @@ services:
     cap_add:
       - NET_ADMIN   # required for TUN/WireGuard
       - SYS_MODULE  # load WireGuard kernel module; safe to drop on kernels ≥ 5.6 with WG built in
+    networks:
+      - app
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -42,12 +44,20 @@ services:
       - tailscale
 
   immich-machine-learning:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
           memory: 4G   # ML model loading can spike; tune to your server's RAM
 
   postgres:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -55,6 +65,10 @@ services:
         max-file: "3"
 
   redis:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -62,6 +76,10 @@ services:
         max-file: "3"
 
   immich-server:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -69,6 +87,10 @@ services:
         max-file: "3"
 
   evolution-api:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -76,6 +98,10 @@ services:
         max-file: "3"
 
   photos_to_frame_daemon:
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:

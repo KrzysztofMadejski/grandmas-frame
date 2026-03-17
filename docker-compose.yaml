@@ -22,6 +22,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - db
     restart: unless-stopped
 
   redis:
@@ -32,6 +34,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - db
     restart: unless-stopped
 
   # ── Immich ─────────────────────────────────────────────────────────────────
@@ -55,6 +59,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - db
+      - app
     restart: unless-stopped
 
   immich-machine-learning:
@@ -62,6 +69,8 @@ services:
     container_name: immich_ml
     volumes:
       - ml_cache:/cache
+    networks:
+      - app
     restart: unless-stopped
 
   # ── Evolution API (WhatsApp gateway) ───────────────────────────────────────
@@ -89,6 +98,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - db
+      - app
     restart: unless-stopped
 
   # ── ImmichFrame (slideshow display server) ─────────────────────────────────
@@ -102,6 +114,8 @@ services:
       Albums: ${IMMICH_ALBUM_ID}
     depends_on:
       - immich-server
+    networks:
+      - app
     restart: unless-stopped
 
   # ── photos_to_frame_daemon (webhook → Immich bridge) ──────────────────────
@@ -124,9 +138,16 @@ services:
     depends_on:
       - evolution-api
       - immich-server
+    networks:
+      - app
     restart: unless-stopped
 
 volumes:
   postgres_data:
   ml_cache:
   evolution_instances:
+
+networks:
+  db:
+    internal: true  # postgres + redis — no outbound internet, not reachable from frame/tailscale
+  app:              # all application services; immich-server and evolution-api bridge both
