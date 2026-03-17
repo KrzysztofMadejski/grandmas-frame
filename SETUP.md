@@ -144,6 +144,7 @@ sudo chown $USER:$USER /var/lib/grandmas-frame/photos
 
 ```bash
 bash setup.sh
+chmod 600 .env   # restrict credentials to the current user only
 ```
 
 When prompted for **Photo storage path**, enter:
@@ -362,24 +363,22 @@ ImmichFrame has no authentication by default. Since the server will be publicly 
 
 Tailscale creates an encrypted WireGuard overlay between your devices. ImmichFrame is never exposed publicly — the tablet connects through a private tunnel, and nothing is reachable from the internet or even the local network.
 
-**Server:**
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-# Note the server's Tailscale IP (100.x.y.z) at https://login.tailscale.com/admin/machines
+Tailscale runs as a Docker sidecar in `docker-compose.prod.yaml` — no host-level install needed. ImmichFrame shares Tailscale's network namespace and has no host port binding at all.
+
+**Server:** Generate a pre-authorized, reusable (non-ephemeral) auth key at [tailscale.com/admin/settings/keys](https://login.tailscale.com/admin/settings/keys) and add it to `.env`:
+```
+TS_AUTHKEY=tskey-auth-...
 ```
 
-Bind ImmichFrame to localhost only so it is not reachable on the LAN. In `docker-compose.prod.yaml` add:
-```yaml
-services:
-  immichframe:
-    ports:
-      - "127.0.0.1:8080:8080"
-```
+The Tailscale container joins your tailnet automatically on first start. Find the device IP at [tailscale.com/admin/machines](https://login.tailscale.com/admin/machines).
 
 **Tablet:** Install the [Tailscale app](https://play.google.com/store/apps/details?id=com.tailscale.ipn), sign in with the same Tailscale account.
 
-In the ImmichFrame app, set the server URL to the Tailscale IP: `http://100.x.y.z:8080`
+In the ImmichFrame app, set the server URL using the machine name or Tailscale IP:
+```
+http://grandmas-frame:8080
+```
+or `http://100.x.y.z:8080` if MagicDNS is not enabled.
 
 No open ports on the router, no LAN exposure, encrypted in transit.
 

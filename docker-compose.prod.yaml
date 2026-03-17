@@ -29,6 +29,11 @@ services:
       - app
     security_opt:
       - no-new-privileges:true
+    pids_limit: 50
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     restart: unless-stopped
     logging:
       driver: json-file
@@ -48,6 +53,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 200
     deploy:
       resources:
         limits:
@@ -58,6 +64,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 100
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     logging:
       driver: json-file
       options:
@@ -69,6 +80,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 50
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     logging:
       driver: json-file
       options:
@@ -80,6 +96,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 300
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     logging:
       driver: json-file
       options:
@@ -91,6 +112,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 200
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     logging:
       driver: json-file
       options:
@@ -102,6 +128,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 100
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     logging:
       driver: json-file
       options:
