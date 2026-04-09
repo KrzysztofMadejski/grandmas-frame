@@ -45,6 +45,7 @@ services:
   # It still resolves immich-server via Docker DNS (Tailscale's namespace is on the project network).
   immichframe:
     network_mode: service:tailscale
+    networks: !reset []
     depends_on:
       - tailscale
 
