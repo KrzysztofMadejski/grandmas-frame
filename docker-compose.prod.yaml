@@ -63,6 +63,12 @@ services:
   postgres:
     cap_drop:
       - ALL
+    cap_add:
+      - SETUID      # switch to postgres user at startup
+      - SETGID
+      - CHOWN       # fix data-dir ownership
+      - FOWNER
+      - DAC_OVERRIDE
     security_opt:
       - no-new-privileges:true
     deploy:
@@ -79,6 +85,9 @@ services:
   redis:
     cap_drop:
       - ALL
+    cap_add:
+      - SETUID      # switch to redis user at startup
+      - SETGID
     security_opt:
       - no-new-privileges:true
     deploy:
