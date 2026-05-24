@@ -8,7 +8,7 @@ Family sends a photo to a WhatsApp group → it appears on Grandma's photo frame
 
 ## Prerequisites
 
-- Docker + Docker Compose v2
+- Docker + Docker Compose v2+ (tested with v5; v5 has stricter validation — the compose files are compatible)
 - `openssl` (for password generation in `setup.sh`)
 - A dedicated WhatsApp number (not your main one — unofficial API carries a small ban risk)
 
@@ -36,42 +36,41 @@ docker compose up -d
 
 ### 3. Set up Immich
 
-#### 3a. Create accounts
+#### 3a. Create admin account
 
-1. Open [http://localhost:2283](http://localhost:2283) and create your **personal admin account**
-2. Go to **Administration → Users → Create user** and create a service account:
-   - Email: `frame-bot@local` (never used, just needs to look valid)
-   - Name: `Frame Bot`
-   - No admin role needed
+1. Open [http://localhost:2283](http://localhost:2283) and create your **admin account**
 
-#### 3b. Get an API key for the service account
+#### 3b. Create two API keys
 
-The daemon uploads photos as this service account. Immich does not allow admins to create API keys on behalf of other users, so you need to log in as the service account directly.
+Both keys can live on your admin account — this is the simplest setup and perfectly fine for a family photo frame on a private network.
 
-1. Open an **incognito window** and log in as `frame-bot@local`
-2. Go to **Account Settings** (avatar, top right) → **API Keys → New API Key**
-3. When prompted for permissions, enable at minimum:
-   - `asset.read`, `asset.view`, `asset.edit`, `asset.share` — to upload photos
-   - `album.read`, `album.update` — to look up the album
-   - `albumAsset.create` — to add photos to the album
-4. Copy the key and add it to `.env`:
-   ```
-   IMMICH_API_KEY=<key>
-   ```
-5. Restart the daemon:
+1. Go to **Account Settings** (avatar, top right) → **API Keys**
+2. Create two keys:
+
+| Key | Name | Permissions | `.env` variable |
+|-----|------|-------------|-----------------|
+| **Daemon key** | `daemon` | `asset.read`, `asset.view`, `asset.upload`, `asset.edit.create`, `asset.share`, `album.read`, `album.update`, `albumAsset.create`, `user.read` | `IMMICH_API_KEY` |
+| **Frame key** | `frame` | `asset.read`, `asset.view`, `asset.download`, `album.read` | `IMMICH_FRAME_API_KEY` |
+
+3. Add both keys to `.env` and restart:
    ```bash
-   docker compose restart photos_to_frame_daemon
+   docker compose restart photos_to_frame_daemon immichframe
    ```
 
-#### 3c. Create the album and share it with the service account
+> **Want more isolation?** Create a separate `frame-bot@local` user, log in as them to create the frame API key, and share the album with them. This scopes the frame to only see shared albums. But for most setups the admin-key approach is simpler and sufficient.
 
-The daemon will not create the album — it expects to find one shared with it. You create and own it:
+#### 3c. Create the album
 
-1. Log in as your **personal admin account**
-2. Go to **Albums → Create Album** and name it anything you like (e.g. `Grandma's Frame`)
-3. Open the album → **Share** → invite `frame-bot@local` with **Editor** role
-
-The daemon checks both albums owned by the service account and albums shared with it, so it will find it automatically.
+1. Go to **Albums → Create Album** and name it anything you like (e.g. `Grandma's Frame`)
+2. Copy the **album UUID** from the URL:
+   ```
+   http://localhost:2283/albums/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this part
+   ```
+3. Add it to `.env`:
+   ```
+   IMMICH_ALBUM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+   ```
 
 ### 4. Set up Evolution API
 
@@ -143,8 +142,9 @@ sudo chown $USER:$USER /var/lib/grandmas-frame/photos
 ### 2. Generate config
 
 ```bash
+chmod +x init-db.sh   # must be executable before postgres first starts, otherwise it's silently skipped
 bash setup.sh
-chmod 600 .env   # restrict credentials to the current user only
+chmod 600 .env         # restrict credentials to the current user only
 ```
 
 When prompted for **Photo storage path**, enter:
@@ -160,16 +160,33 @@ docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 
 This omits `docker-compose.override.yaml`, so Postgres and Redis ports stay closed.
 
-### 4. Set up Immich and Evolution API
+**Low-memory VPS (4 GB, e.g. Mikrus 3.5):** add the memory-tuned overlay:
 
-Follow steps 3–5 from the local setup above, replacing `localhost` with your server's IP or hostname.
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml -f docker-compose.mikrus35.yaml up -d
+```
 
-### 5. Expose services (optional but recommended)
+This rebalances memory limits (Postgres 1 GB, Immich Server 1.5 GB, ML 1 GB, everything else 128–256 MB) and switches the face recognition model to the smaller `buffalo_s`.
 
-Put Immich and Evolution API behind a reverse proxy (Caddy or nginx) with HTTPS.
-Only expose ports you need — the daemon (`3000`) should stay internal.
+### 4. Access the web UIs
 
-Example Caddyfile:
+If your VPS doesn't expose ports (common on budget VPS like Mikrus), use SSH tunnels:
+
+```bash
+# Tunnel Immich and Evolution API to your laptop
+ssh -f -N -L 2283:localhost:2283 -L 8080:localhost:8080 root@your-vps -p <port>
+```
+
+Then open `http://localhost:2283` (Immich) and `http://localhost:8080` (Evolution API) as if they were local.
+
+### 5. Set up Immich and Evolution API
+
+Follow steps 3–5 from the local setup above — with the SSH tunnel, everything works on `localhost`.
+
+### 6. Expose services (optional)
+
+If you want persistent access without SSH tunnels, put services behind a reverse proxy (Caddy or nginx) with HTTPS:
+
 ```
 immich.yourdomain.com {
     reverse_proxy localhost:2283
@@ -180,14 +197,7 @@ evolution.yourdomain.com {
 }
 ```
 
-If using a public URL for Evolution API webhooks, set the webhook to:
-```
-https://evolution.yourdomain.com/webhook/instance-name
-```
-And point the instance webhook back at the daemon's internal address:
-```
-http://photos_to_frame_daemon:3000/webhook
-```
+If using Tailscale (already in the prod compose), no reverse proxy is needed — access services via the Tailscale hostname directly.
 
 ### 6. Backups
 
@@ -203,48 +213,16 @@ docker run --rm -v grandmas-frame_postgres_data:/data -v /backup:/backup \
 
 ImmichFrame runs as a web container (already in `docker-compose.yaml`) that connects to Immich and serves the slideshow. On a tablet, a thin Android app just wraps this web UI.
 
-#### 7a. Create an API key for the frame
+#### 7a. API key and album
 
-Create the key on the **frame-bot service account** (not your personal admin account). This means ImmichFrame can only see albums shared with the bot — natural scoping, no access to your personal library.
+If you followed step 3b, `IMMICH_FRAME_API_KEY` and `IMMICH_ALBUM_ID` are already in your `.env`. Verify the frame is working:
 
-1. Log in as `frame-bot@local` (incognito window)
-2. Account Settings → API Keys → New API Key
-3. Enable: `asset.read`, `asset.view`, `asset.download`, `album.read`
-4. Copy the key and add to `.env`:
-   ```
-   IMMICH_FRAME_API_KEY=<key>
-   ```
+- **Local dev:** open `http://localhost:8080`
+- **Production with Tailscale:** open `http://grandmas-frame:8080`
 
-#### 7b. Get the album UUID
+If the frame shows "No photos", check that the album has at least one photo.
 
-ImmichFrame requires a UUID, not the album name. Find it in the Immich album URL:
-```
-http://localhost:2283/albums/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this part
-```
-
-Or via the API (as the frame-bot account):
-```bash
-docker exec immich_server node -e "
-fetch('http://localhost:2283/api/albums?shared=true',
-  {headers:{'x-api-key':'<IMMICH_FRAME_API_KEY>'}})
-  .then(r=>r.json()).then(d=>d.forEach(a=>console.log(a.id, a.albumName)))"
-```
-
-Add it to `.env`:
-```
-IMMICH_ALBUM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-```
-
-#### 7c. Restart and verify
-
-```bash
-docker compose restart immichframe
-```
-
-In local dev, open `http://localhost:8080` to verify the slideshow works.
-
-#### 7c. Install the Android app on the tablet
+#### 7b. Install the Android app on the tablet
 
 Install [ImmichFrame](https://play.google.com/store/apps/details?id=com.immichframe.immichframe) from the Play Store (or sideload from [GitHub releases](https://github.com/immichFrame/ImmichFrame_Android/releases)).
 
@@ -272,6 +250,22 @@ To undo: Settings > Apps > Default apps > Home app > One UI Home
 
 1. Settings > Security and privacy > More security settings > App pinning > On
 2. Open ImmichFrame, swipe up to Recents, tap the ImmichFrame app icon > Pin
+
+### Exiting kiosk mode
+
+**If Screen Pinning is active** (screen shows a lock icon when you swipe up):
+
+1. Swipe up from the bottom and hold — this opens the Recents view
+2. Tap the **pin icon** (or hold **Back + Recents** on older models)
+3. Enter your PIN to unpin
+
+**Once unpinned (or if Screen Pinning was never enabled):**
+
+```
+Settings > Apps > Default apps > Home app > One UI Home
+```
+
+This restores normal tablet behavior. To re-enter kiosk mode, reverse the steps in section 1 above.
 
 ### 2. Keep screen always on
 
@@ -309,15 +303,17 @@ Use a modest 5–10 W charger (not a fast charger) — lower heat = slower degra
 
 ### 5. Night schedule
 
-ImmichFrame has no built-in sleep scheduler. Use one of:
+Use **Samsung Routines** for night dimming:
 
-- **Samsung Routines** (built-in): Settings > Modes and Routines > Routines — dim at 23:00, launch ImmichFrame at 08:00
-- **ImmichFrame Remote Control API + server cron** — the Android app exposes a small HTTP server on port 53287:
-  ```bash
-  # Add to crontab on your server
-  0 23 * * *  curl -s http://<tablet-ip>:53287/dim
-  0 8  * * *  curl -s http://<tablet-ip>:53287/undim
-  ```
+```
+Settings > Modes and Routines > Routines
+```
+
+Create two routines:
+- **Night:** At 23:00 → set brightness to 1%
+- **Morning:** At 08:00 → set brightness to your preferred level
+
+For a full blackout, you can use ImmichFrame's built-in Dim Settings instead — but beware: once dimmed, the screen goes fully black with no obvious way to undim or access settings. Recovering requires clearing app data (Settings → Apps → ImmichFrame → Storage → Clear Data).
 
 ### 6. Wi-Fi reliability
 
@@ -420,24 +416,60 @@ Breaks if the tablet gets a new IP — a DHCP reservation is essential.
 
 ---
 
-## Bulk-uploading existing WhatsApp group media to Immich
+## Bulk-uploading existing photos to Immich
 
-Use this to backfill all historical photos from the group before the daemon was running.
+Use this to backfill historical photos before the daemon was running.
 
-### Recommended: Immich mobile app backup
+### Option 1: Immich CLI inside Docker (recommended for files on disk)
 
-On Android, the Immich mobile app can back up the WhatsApp Images and WhatsApp Video device albums to Immich:
+If you have photos on your computer (e.g. exported from WhatsApp Web):
+
+1. **Deduplicate** by content hash (optional but recommended):
+   ```bash
+   mkdir -p deduplicated
+   for file in source-folder/*; do
+     hash=$(shasum -a 256 "$file" | cut -d' ' -f1)
+     ext="${file##*.}"
+     cp -n "$file" "deduplicated/${hash}.${ext}"
+   done
+   ```
+
+2. **Copy to the server:**
+   ```bash
+   scp -P <port> deduplicated/* root@your-vps:/tmp/photos-upload/
+   ```
+
+3. **Upload via the Immich CLI** (it's bundled inside the Immich server image):
+   ```bash
+   docker run --rm --entrypoint '' \
+     --network grandmas-frame_app \
+     -v /tmp/photos-upload:/import:ro \
+     -e IMMICH_INSTANCE_URL=http://immich-server:2283 \
+     -e IMMICH_API_KEY=<your-api-key> \
+     ghcr.io/immich-app/immich-server:release \
+     /usr/src/app/server/bin/immich upload \
+       --album-name 'Your Album Name' \
+       --no-progress /import/
+   ```
+
+4. **Clean up** the temp files:
+   ```bash
+   rm -rf /tmp/photos-upload
+   ```
+
+The Immich CLI deduplicates by content hash, so re-uploading the same photos is safe.
+
+### Option 2: Immich mobile app backup
+
+On Android, the Immich mobile app can back up WhatsApp device albums:
 
 1. Install the Immich mobile app on a group member's phone
-2. Go to the backup screen → Select albums to back up
-3. Enable "WhatsApp Images" and "WhatsApp Video"
-4. Tap Start Backup (must be on the same network as the Immich server, or connected via Tailscale)
+2. Backup screen → Select albums → enable "WhatsApp Images" and "WhatsApp Video"
+3. Start Backup (must be on the same network or connected via Tailscale)
 
-**Caveat:** This uploads all WhatsApp media saved on that device, from all chats — not just the family group. After the backup completes, go to Immich and move only the photos you want into the *Grandma's Frame* album. The rest can stay in the user's personal library or be deleted.
+**Caveat:** This uploads all WhatsApp media from all chats, not just the family group. After backup, move the relevant photos into the frame album manually.
 
-The Immich CLI deduplicates by content hash, so any photos later re-sent through the group and picked up by the daemon will not be duplicated.
-
-> **Note:** A smarter approach — a script that connects as an existing group member account via Evolution API and downloads only group photos — is tracked in `improvements.md`.
+> **Note:** A smarter approach — a script that connects as an existing group member via Evolution API and downloads only group photos — is tracked in `improvements.md`.
 
 ---
 
@@ -450,8 +482,84 @@ The Immich CLI deduplicates by content hash, so any photos later re-sent through
 | `EVOLUTION_DB_PASSWORD` | Evolution API's postgres user password |
 | `IMMICH_VERSION` | Immich image tag (`release` = latest stable) |
 | `UPLOAD_LOCATION` | Host path where Immich stores photos |
-| `IMMICH_API_KEY` | API key for the frame-bot service account (upload) |
+| `IMMICH_API_KEY` | API key for uploading photos (daemon) |
 | `EVOLUTION_API_KEY` | Evolution API authentication key |
 | `IMMICH_ALBUM_ID` | UUID of the album — used by both the daemon (to add photos) and ImmichFrame (to display). Copy from the Immich album URL. |
 | `WHATSAPP_GROUP_ID` | Group JID to filter — empty means accept from all chats |
-| `IMMICH_FRAME_API_KEY` | API key for ImmichFrame display — created on the frame-bot account for natural album scoping |
+| `IMMICH_FRAME_API_KEY` | API key for ImmichFrame display (can be same admin account or a separate frame-bot user) |
+
+---
+
+## Troubleshooting
+
+### Postgres crashes with "Operation not permitted"
+
+```
+chmod: changing permissions of '/var/lib/postgresql/data': Operation not permitted
+error: failed switching to "postgres": operation not permitted
+```
+
+The prod compose uses `cap_drop: ALL` for security. Postgres and Redis need capabilities added back to switch from root to their service user at startup. The prod yaml already includes the required `cap_add` entries (`SETUID`, `SETGID`, `CHOWN`, `FOWNER`, `DAC_OVERRIDE` for postgres; `SETUID`, `SETGID` for redis). If you see this error, make sure you're using the latest `docker-compose.prod.yaml`.
+
+### Immich crashes with "CONNECTION_CLOSED" or "database system is not yet accepting connections"
+
+Immich started before Postgres was fully ready. This can happen after a fresh deploy or restart when Postgres needs time to initialize (especially on low-memory VPS). Fix: wait for Postgres to become healthy (`docker ps` shows `(healthy)`), then restart Immich:
+
+```bash
+docker restart immich_server
+```
+
+### Postgres at 99% memory / OOM-killed
+
+On a 4 GB VPS, Postgres needs at least 1 GB — the initial geodata import (reverse geocoding) consumes significant memory. If you see Postgres restart-looping after first deploy, increase its memory limit in the mikrus35 overlay.
+
+### photos_to_frame_daemon keeps restarting
+
+Check `docker logs grandmas_photos_to_frame_daemon`:
+
+- **"Connection refused"** — Evolution API or Immich isn't ready yet. The daemon will recover on its own once they're up.
+- **"401 Unauthorized"** — `IMMICH_API_KEY` is empty or invalid. Set it in `.env` and restart.
+- **"403 Forbidden / Missing required permission"** — the API key is missing permissions. See the permissions table in step 3b.
+
+### Thumbnails not showing after upload
+
+Normal — Immich generates thumbnails in the background. Check progress in **Administration → Jobs**. On a low-memory VPS this can take a few minutes for a large batch.
+
+### init-db.sh not running / databases not created
+
+Postgres only runs scripts in `/docker-entrypoint-initdb.d/` on **first initialization** (when the data volume is empty). If `init-db.sh` wasn't executable at that point, Postgres silently skipped it. Fix:
+
+```bash
+docker compose down
+docker volume rm grandmas-frame_postgres_data   # WARNING: deletes all DB data
+chmod +x init-db.sh
+docker compose up -d
+```
+
+### ImmichFrame shows black screen on tablet
+
+Likely cause: ImmichFrame's built-in **Dim Settings** are active (screen goes fully black). The app has no obvious way to access settings from the dimmed state.
+
+Fix: **Settings → Apps → ImmichFrame → Storage → Clear Data** to reset the app, then avoid using ImmichFrame's built-in dim/sleep feature. Use **Samsung Routines** for night scheduling instead — it's more reliable and easier to control (see the Night schedule section above).
+
+### ImmichFrame not reachable via Tailscale
+
+If the tablet can't connect to `http://grandmas-frame:8080`:
+
+1. **Check Tailscale status:** `docker exec grandmas_tailscale tailscale status` — verify both the server and tablet appear as connected
+2. **Use the Tailscale IP instead of hostname:** The MagicDNS hostname may differ from the Docker hostname. Check the actual name/IP in the [Tailscale admin console](https://login.tailscale.com/admin/machines) and use `http://100.x.y.z:8080`
+3. **Check iptables errors:** If `tailscale status` shows iptables permission errors, Tailscale may not be routing traffic properly. Ensure the Tailscale container has `NET_ADMIN` and `SYS_MODULE` capabilities and access to `/dev/net/tun`
+
+### Daemon logs not showing (only Uvicorn access lines)
+
+If you only see `INFO: ... "POST /webhook HTTP/1.1" 200 OK` but no app-level logs (event names, group IDs, etc.), Uvicorn's default log level is suppressing them. The Dockerfile should include `--log-level info`:
+
+```dockerfile
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000", "--log-level", "info"]
+```
+
+Rebuild and restart the daemon after changing.
+
+### Evolution API manager has no login prompt
+
+This is normal — the manager UI doesn't require authentication by default. The `EVOLUTION_API_KEY` is used for API calls, not the web dashboard. Keep the manager behind an SSH tunnel or firewall (never expose port 8080 publicly without additional auth).

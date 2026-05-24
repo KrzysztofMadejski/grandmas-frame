@@ -24,13 +24,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 1G
 
   postgres:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
 
   redis:
     deploy:
@@ -42,7 +42,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 1536M
 
   evolution-api:
     deploy:

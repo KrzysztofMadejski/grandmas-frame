@@ -29,3 +29,9 @@ Ask the user which they prefer before proceeding.
 ## Postgres
 
 - `init-db.sh` must be executable (`chmod +x`) before the postgres container first starts, otherwise postgres skips it silently.
+
+## Learnings
+
+<!-- Added: 2026-04-10 -->
+- When debugging missing daemon logs: Uvicorn suppresses app-level logs by default — Dockerfile CMD needs `--log-level info` to see both access logs and app logs.
+- Mikrus VPS doesn't support swap (`swapon` fails with "Operation not permitted") — it's container-based hosting where the host controls swap.

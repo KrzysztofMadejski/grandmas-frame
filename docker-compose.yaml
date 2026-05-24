@@ -112,6 +112,7 @@ services:
       ImmichServerUrl: http://immich-server:2283
       ApiKey: ${IMMICH_FRAME_API_KEY}
       Albums: ${IMMICH_ALBUM_ID}
+      ImageOrder: Newest
     depends_on:
       - immich-server
     networks:

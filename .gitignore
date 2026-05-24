@@ -1,6 +1,7 @@
 .env
 photos-local-dev/
 debug/
+tunnel.sh
 
 # IDEs
 .idea/
