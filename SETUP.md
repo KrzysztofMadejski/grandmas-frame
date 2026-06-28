@@ -549,6 +549,21 @@ If the tablet can't connect to `http://grandmas-frame:8080`:
 1. **Check Tailscale status:** `docker exec grandmas_tailscale tailscale status` — verify both the server and tablet appear as connected
 2. **Use the Tailscale IP instead of hostname:** The MagicDNS hostname may differ from the Docker hostname. Check the actual name/IP in the [Tailscale admin console](https://login.tailscale.com/admin/machines) and use `http://100.x.y.z:8080`
 3. **Check iptables errors:** If `tailscale status` shows iptables permission errors, Tailscale may not be routing traffic properly. Ensure the Tailscale container has `NET_ADMIN` and `SYS_MODULE` capabilities and access to `/dev/net/tun`
+4. **Stale network namespace (port 8080 missing from `ss`, connection refused):** `network_mode: service:tailscale` joins ImmichFrame to Tailscale's network namespace at container *creation* time. If the Tailscale container was ever recreated, ImmichFrame ends up in a stale, isolated namespace — `docker inspect` still shows the right container ID but the namespaces no longer match.
+
+   Diagnose:
+   ```bash
+   ls -la /proc/$(docker inspect -f '{{.State.Pid}}' grandmas_tailscale)/ns/net
+   ls -la /proc/$(docker inspect -f '{{.State.Pid}}' immichframe)/ns/net
+   # The inode numbers (e.g. net:[4026561809]) must be identical
+   ```
+
+   Fix — recreate ImmichFrame so it joins the current namespace:
+   ```bash
+   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --force-recreate immichframe
+   ```
+
+   **Rule:** whenever you recreate the Tailscale container, always recreate ImmichFrame too. Docker does not cascade recreations automatically.
 
 ### Daemon logs not showing (only Uvicorn access lines)
 
